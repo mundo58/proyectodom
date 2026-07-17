@@ -214,6 +214,9 @@
             padding: 12px;
             border-radius: 8px;
             border: 1px dashed #ced4da;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
     </style>
 </head>
@@ -221,7 +224,7 @@
 
     <div class="contenedor-principal">
         
-        <!-- PANEL IZQUIERDO: CAPTURA, EDICIÓN, IMPORTACIÓN Y CATÁLOGO -->
+        <!-- PANEL IZQUIERDO: CAPTURA, EDICIÓN, IMPORTACIÓN/EXPORTACIÓN Y CATÁLOGO -->
         <div class="panel">
             <h2 id="tituloFormulario">Capturar Producto</h2>
             <form id="formularioProducto">
@@ -253,10 +256,13 @@
                 </div>
             </form>
 
-            <!-- SECCIÓN: IMPORTAR CATÁLOGO -->
+            <!-- SECCIÓN: IMPORTAR / EXPORTAR CATÁLOGO -->
             <div class="seccion-importar">
-                <label style="font-weight: bold; font-size: 0.9rem; display: block; margin-bottom: 5px;">📥 Importar Catálogo (Excel / JSON)</label>
+                <label style="font-weight: bold; font-size: 0.9rem;">Gestión de Catálogo (Excel / JSON)</label>
                 <input type="file" id="inputImportar" accept=".xlsx, .xls, .json" style="width: 100%; box-sizing: border-box; font-size: 0.85rem;">
+                <button type="button" id="btnExportarCatalogo" class="btn-excel" style="padding: 8px; font-size: 0.85rem;">
+                    📊 Exportar Catálogo a Excel
+                </button>
             </div>
 
             <button type="button" id="btnBorrarCatalogo" class="btn-danger">
@@ -291,17 +297,16 @@
                 🗑 Borrar Historial de Ventas
             </button>
 
-            <!-- Botones de Exportación -->
+            <!-- Botones de Exportación de Ventas -->
             <div class="export-buttons">
-                <button type="button" class="btn-excel" id="btnExportarExcel">📊 Exportar a Excel</button>
-                <button type="button" class="btn-pdf" id="btnExportarPDF">📄 Exportar a PDF</button>
+                <button type="button" class="btn-excel" id="btnExportarExcel">📊 Exportar Ventas a Excel</button>
+                <button type="button" class="btn-pdf" id="btnExportarPDF">📄 Exportar Ventas a PDF</button>
             </div>
         </div>
 
     </div>
 
     <script>
-        // Datos
         let catalogoProductos = JSON.parse(localStorage.getItem("catalogoProductos")) || [];
         let carrito = [];
         let historialVentas = JSON.parse(localStorage.getItem("historialVentas")) || [];
@@ -315,7 +320,6 @@
             localStorage.setItem("historialVentas", JSON.stringify(historialVentas));
         }
 
-        // Elementos DOM
         const formulario = document.getElementById('formularioProducto');
         const tituloFormulario = document.getElementById('tituloFormulario');
         const idProductoEditar = document.getElementById('idProductoEditar');
@@ -336,7 +340,7 @@
         const placeholderVentas = document.getElementById('placeholderVentas');
         const txtTotal = document.getElementById('txtTotal');
 
-        // --- MÓDULO 1: CÁMARA & LECTOR DE CÓDIGO DE BARRAS ---
+        // ESCÁNER
         document.getElementById('btnIniciarEscaner').addEventListener('click', () => {
             const visorCamara = document.getElementById('camara-escaner');
             
@@ -388,7 +392,7 @@
             }
         });
 
-        // --- MÓDULO 2: CAPTURA, EDICIÓN E IMPORTACIÓN DE CATÁLOGO ---
+        // FORMULARIO PRODUCTOS
         formulario.addEventListener('submit', function(evento) {
             evento.preventDefault();
             
@@ -443,7 +447,7 @@
             formulario.classList.remove("modo-edicion");
         }
 
-        // Importación de Catálogo (Excel / JSON)
+        // IMPORTAR CATÁLOGO
         inputImportar.addEventListener('change', (e) => {
             const archivo = e.target.files[0];
             if (!archivo) return;
@@ -462,7 +466,6 @@
                 };
                 lector.readAsText(archivo);
             } else {
-                // Procesar Excel con SheetJS
                 const lector = new FileReader();
                 lector.onload = (evento) => {
                     try {
@@ -485,7 +488,6 @@
         function procesarImportacion(listaNuevos) {
             let agregados = 0;
             listaNuevos.forEach(item => {
-                // Acepta claves tanto en español como sin acentos/mayúsculas
                 const codigo = String(item.codigo || item.Codigo || item["Código"] || item.code || "").trim();
                 const nombre = String(item.nombre || item.Nombre || item.product || "").trim();
                 const precio = parseFloat(item.precio || item.Precio || item.price || 0);
@@ -505,6 +507,26 @@
             renderizarCatalogo(catalogoProductos);
             alert(`Importación completada: ${agregados} producto(s) procesados.`);
         }
+
+        // EXPORTAR CATÁLOGO A EXCEL
+        document.getElementById('btnExportarCatalogo').addEventListener('click', () => {
+            if (catalogoProductos.length === 0) {
+                alert("El catálogo está vacío. Agrega productos antes de exportar.");
+                return;
+            }
+
+            const filasCat = catalogoProductos.map(p => ({
+                "Código": p.codigo,
+                "Nombre": p.nombre,
+                "Precio ($)": p.precio
+            }));
+
+            const hoja = XLSX.utils.json_to_sheet(filasCat);
+            const libro = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(libro, hoja, "Catálogo");
+
+            XLSX.writeFile(libro, `Catalogo_Productos_${new Date().toISOString().slice(0,10)}.xlsx`);
+        });
 
         function renderizarCatalogo(lista) {
             listaProductos.innerHTML = '';
@@ -547,7 +569,7 @@
             renderizarCatalogo(filtrados);
         });
 
-        // --- MÓDULO 3: CARRITO DE COMPRAS ---
+        // CARRITO
         function agregarAlCarrito(producto) {
             const itemExistente = carrito.find(item => item.codigo === producto.codigo);
             if (itemExistente) {
@@ -600,7 +622,7 @@
             txtTotal.textContent = `$${totalAcumulado.toFixed(2)}`;
         }
 
-        // --- MÓDULO 4: REGISTRO Y HISTORIAL DE VENTAS ---
+        // VENTAS
         document.getElementById('btnCerrarVenta').addEventListener('click', () => {
             if (carrito.length === 0) {
                 alert("El carrito está vacío.");
@@ -649,7 +671,7 @@
             });
         }
 
-        // --- MÓDULO 5: EXPORTACIÓN DE DATOS (EXCEL Y PDF) ---
+        // EXPORTACIÓN VENTAS (EXCEL Y PDF)
         document.getElementById('btnExportarExcel').addEventListener('click', () => {
             if (historialVentas.length === 0) {
                 alert("No hay ventas registradas para exportar.");
@@ -731,9 +753,7 @@
             doc.save(`Reporte_Ventas_${new Date().toISOString().slice(0,10)}.pdf`);
         });
 
-        // --- MÓDULO 6: ACCIONES DE BORRADO SEPARADAS ---
-
-        // Borrar SOLO el Catálogo
+        // BORRADO SEPARADO
         document.getElementById("btnBorrarCatalogo").addEventListener("click", () => {
             if (!confirm("¿Deseas vaciar TODO el catálogo de productos?")) return;
 
@@ -743,7 +763,6 @@
             renderizarCatalogo(catalogoProductos);
         });
 
-        // Borrar SOLO las Ventas
         document.getElementById("btnBorrarVentas").addEventListener("click", () => {
             if (!confirm("¿Deseas borrar TODO el historial de ventas?")) return;
 
