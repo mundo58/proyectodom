@@ -4,8 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema POS con Escáner de Barras</title>
-    <!-- Incluimos QuaggaJS para el escáner de códigos de barra -->
+    <!-- QuaggaJS para lectura de código de barras -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+    <!-- SheetJS (XLSX) para exportar a Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- jsPDF y AutoTable para exportar a PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -89,6 +95,21 @@
         .btn-venta { background-color: #28a745; width: 100%; padding: 12px; margin-top: 10px;}
         .btn-venta:hover { background-color: #218838; }
 
+        .btn-secundario { background-color: #6c757d; }
+        .btn-secundario:hover { background-color: #5a6268; }
+
+        .btn-excel { background-color: #198754; }
+        .btn-excel:hover { background-color: #157347; }
+
+        .btn-pdf { background-color: #dc3545; }
+        .btn-pdf:hover { background-color: #bb2d3b; }
+
+        .btn-sm {
+            padding: 4px 8px;
+            font-size: 0.8rem;
+            border-radius: 4px;
+        }
+
         /* Contenedor de la cámara interactiva */
         #camara-escaner {
             width: 100%;
@@ -125,29 +146,18 @@
             padding: 10px;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             transition: transform 0.1s, background 0.2s;
         }
 
-        .tarjeta-item.clickable { cursor: pointer; }
-        .tarjeta-item.clickable:hover {
-            background-color: #f1f5f9;
-            transform: translateY(-1px);
-        }
-
-        .info-item { flex: 1; }
+        .info-item { flex: 1; cursor: pointer; }
         .info-item h4 { margin: 0 0 2px 0; color: #2d3748; font-size: 0.95rem; }
         .info-item p { margin: 0; font-size: 0.85rem; color: #718096; }
-        .precio-tag { color: #28a745; font-weight: bold; font-size: 0.95rem; }
+        .precio-tag { color: #28a745; font-weight: bold; font-size: 0.95rem; margin-right: 5px; }
 
-        .acciones-carrito {
+        .acciones-item {
             display: flex;
             gap: 5px;
-        }
-
-        .btn-sm {
-            padding: 4px 10px;
-            font-size: 0.85rem;
         }
 
         .total-contenedor {
@@ -162,7 +172,7 @@
         }
 
         .registro-ventas {
-            max-height: 150px;
+            max-height: 200px;
             overflow-y: auto;
             font-size: 0.85rem;
             background: #f8f9fa;
@@ -172,10 +182,22 @@
         }
 
         .venta-log {
-            padding: 5px 0;
+            padding: 8px 0;
             border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
         }
         .venta-log:last-child { border: none; }
+
+        .export-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .export-buttons button {
+            flex: 1;
+        }
 
         .placeholder {
             color: #a0aec0;
@@ -184,16 +206,23 @@
             margin: 10px 0;
             font-size: 0.9rem;
         }
+
+        .modo-edicion {
+            background-color: #fff3cd !important;
+            border: 1px solid #ffeba2;
+        }
     </style>
 </head>
 <body>
 
     <div class="contenedor-principal">
         
-        <!-- PANEL IZQUIERDO: CAPTURA Y CATÁLOGO -->
+        <!-- PANEL IZQUIERDO: CAPTURA, EDICIÓN Y CATÁLOGO -->
         <div class="panel">
-            <h2>Capturar Producto</h2>
+            <h2 id="tituloFormulario">Capturar Producto</h2>
             <form id="formularioProducto">
+                <input type="hidden" id="idProductoEditar" value="">
+
                 <div class="campo">
                     <label>Código de Barras</label>
                     <div class="fila-input-escaner">
@@ -215,14 +244,17 @@
                     <input type="number" id="inputPrecio" placeholder="0.00" step="0.01" min="0" required>
                 </div>
 
-                <button type="submit">Guardar en Catálogo</button>
+                <div style="display: flex; gap: 8px;">
+                    <button type="submit" id="btnGuardar" style="flex: 1;">Guardar en Catálogo</button>
+                    <button type="button" id="btnCancelarEdicion" class="btn-secundario" style="display: none;">Cancelar</button>
+                </div>
             </form>
 
             <button type="button" id="btnBorrarDatos" style="background:#dc3545;">
                 🗑 Borrar catálogo y ventas
             </button>
 
-            <h2>Catálogo (Haz clic para agregar al carrito)</h2>
+            <h2>Catálogo (Haz clic en el texto para agregar)</h2>
             <div class="campo">
                 <input type="text" id="inputFiltro" placeholder="🔍 Buscar por nombre o código...">
             </div>
@@ -230,7 +262,7 @@
             <div id="listaProductos" class="lista-productos"></div>
         </div>
 
-        <!-- PANEL DERECHO: CAJA, TOTALES Y HISTORIAL -->
+        <!-- PANEL DERECHO: CAJA, TOTALES, HISTORIAL Y EXPORTACIÓN -->
         <div class="panel">
             <h2>Carrito de Compras (Venta Actual)</h2>
             <p id="placeholderCarrito" class="placeholder">El carrito está vacío.</p>
@@ -245,6 +277,12 @@
             <h2>Historial de Ventas Guardadas</h2>
             <p id="placeholderVentas" class="placeholder">No se han registrado ventas hoy.</p>
             <div id="registroVentas" class="registro-ventas" style="display:none;"></div>
+
+            <!-- Botones para exportar las ventas -->
+            <div class="export-buttons">
+                <button type="button" class="btn-excel" id="btnExportarExcel">📊 Exportar a Excel</button>
+                <button type="button" class="btn-pdf" id="btnExportarPDF">📄 Exportar a PDF</button>
+            </div>
         </div>
 
     </div>
@@ -266,10 +304,14 @@
 
         // Elementos DOM
         const formulario = document.getElementById('formularioProducto');
+        const tituloFormulario = document.getElementById('tituloFormulario');
+        const idProductoEditar = document.getElementById('idProductoEditar');
         const inputCodigo = document.getElementById('inputCodigo');
         const inputNombre = document.getElementById('inputNombre');
         const inputPrecio = document.getElementById('inputPrecio');
         const inputFiltro = document.getElementById('inputFiltro');
+        const btnGuardar = document.getElementById('btnGuardar');
+        const btnCancelarEdicion = document.getElementById('btnCancelarEdicion');
         
         const listaProductos = document.getElementById('listaProductos');
         const listaCarrito = document.getElementById('listaCarrito');
@@ -313,7 +355,6 @@
             });
         });
 
-        // Callback de lectura de cámara
         Quagga.onDetected((data) => {
             if (!escanerActivo) return;
 
@@ -333,27 +374,62 @@
             }
         });
 
-        // --- MÓDULO 2: CAPTURA DE PRODUCTOS ---
+        // --- MÓDULO 2: CAPTURA Y EDICIÓN DE PRODUCTOS ---
         formulario.addEventListener('submit', function(evento) {
             evento.preventDefault();
             
-            const nuevoProducto = {
-                codigo: inputCodigo.value.trim(),
-                nombre: inputNombre.value.trim(),
-                precio: parseFloat(inputPrecio.value)
-            };
+            const codigo = inputCodigo.value.trim();
+            const nombre = inputNombre.value.trim();
+            const precio = parseFloat(inputPrecio.value);
+            const codigoAnterior = idProductoEditar.value;
 
-            const index = catalogoProductos.findIndex(p => p.codigo === nuevoProducto.codigo);
-            if(index !== -1){
-                catalogoProductos[index] = nuevoProducto;
+            if (codigoAnterior) {
+                // Modo Edición
+                const index = catalogoProductos.findIndex(p => p.codigo === codigoAnterior);
+                if (index !== -1) {
+                    catalogoProductos[index] = { codigo, nombre, precio };
+                }
+                cancelarEdicion();
             } else {
-                catalogoProductos.push(nuevoProducto);
+                // Modo Creación
+                const indexExistente = catalogoProductos.findIndex(p => p.codigo === codigo);
+                if(indexExistente !== -1){
+                    catalogoProductos[indexExistente] = { codigo, nombre, precio };
+                } else {
+                    catalogoProductos.push({ codigo, nombre, precio });
+                }
+                formulario.reset();
             }
 
             guardarCatalogo();
-            formulario.reset();
             renderizarCatalogo(catalogoProductos);
         });
+
+        function cargarProductoParaEditar(codigo) {
+            const prod = catalogoProductos.find(p => p.codigo === codigo);
+            if (!prod) return;
+
+            idProductoEditar.value = prod.codigo;
+            inputCodigo.value = prod.codigo;
+            inputNombre.value = prod.nombre;
+            inputPrecio.value = prod.precio;
+
+            tituloFormulario.textContent = "✏️ Editar Producto";
+            btnGuardar.textContent = "Actualizar Producto";
+            btnCancelarEdicion.style.display = "inline-block";
+            formulario.classList.add("modo-edicion");
+        }
+
+        btnCancelarEdicion.addEventListener('click', cancelarEdicion);
+
+        function cancelarEdicion() {
+            idProductoEditar.value = "";
+            formulario.reset();
+            tituloFormulario.textContent = "Capturar Producto";
+            btnGuardar.textContent = "Guardar en Catálogo";
+            btnCancelarEdicion.style.display = "none";
+            formulario.classList.remove("modo-edicion");
+        }
 
         function renderizarCatalogo(lista) {
             listaProductos.innerHTML = '';
@@ -365,15 +441,27 @@
 
             lista.forEach(producto => {
                 const tarjeta = document.createElement('div');
-                tarjeta.className = 'tarjeta-item clickable';
+                tarjeta.className = 'tarjeta-item';
                 tarjeta.innerHTML = `
-                    <div class="info-item">
+                    <div class="info-item" title="Haga clic para agregar al carrito">
                         <h4>${producto.nombre}</h4>
                         <p>Cód: ${producto.codigo}</p>
                     </div>
                     <span class="precio-tag">$${producto.precio.toFixed(2)}</span>
+                    <div class="acciones-item">
+                        <button class="btn-sm btn-secundario" title="Editar producto">✏️</button>
+                    </div>
                 `;
-                tarjeta.addEventListener('click', () => agregarAlCarrito(producto));
+
+                // Clic en el texto -> Agregar al carrito
+                tarjeta.querySelector('.info-item').addEventListener('click', () => agregarAlCarrito(producto));
+                
+                // Clic en el botón Editar -> Cargar en formulario
+                tarjeta.querySelector('.btn-secundario').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    cargarProductoParaEditar(producto.codigo);
+                });
+
                 listaProductos.appendChild(tarjeta);
             });
         }
@@ -387,7 +475,7 @@
             renderizarCatalogo(filtrados);
         });
 
-        // --- MÓDULO 3: CARRITO & SUMA ---
+        // --- MÓDULO 3: CARRITO DE COMPRAS ---
         function agregarAlCarrito(producto) {
             const itemExistente = carrito.find(item => item.codigo === producto.codigo);
             if (itemExistente) {
@@ -429,7 +517,7 @@
                         <p>Unit: $${item.precio.toFixed(2)} x ${item.cantidad}</p>
                     </div>
                     <span class="precio-tag">$${subtotal.toFixed(2)}</span>
-                    <div class="acciones-carrito">
+                    <div class="acciones-item">
                         <button class="btn-sm" onclick="cambiarCantidad(${index}, -1)">-</button>
                         <button class="btn-sm" onclick="cambiarCantidad(${index}, 1)">+</button>
                     </div>
@@ -440,7 +528,7 @@
             txtTotal.textContent = `$${totalAcumulado.toFixed(2)}`;
         }
 
-        // --- MÓDULO 4: REGISTRO DE VENTAS ---
+        // --- MÓDULO 4: REGISTRO Y HISTORIAL DE VENTAS ---
         document.getElementById('btnCerrarVenta').addEventListener('click', () => {
             if (carrito.length === 0) {
                 alert("El carrito está vacío.");
@@ -451,8 +539,9 @@
             
             const nuevaVenta = {
                 id: historialVentas.length + 1,
-                fecha: new Date().toLocaleTimeString(),
-                articulos: carrito.map(i => `${i.nombre} (x${i.cantidad})`).join(', '),
+                fecha: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString(),
+                articulosDetalle: [...carrito],
+                resumenArticulos: carrito.map(i => `${i.nombre} (x${i.cantidad})`).join(', '),
                 total: totalFinal
             };
 
@@ -478,15 +567,106 @@
                 const log = document.createElement('div');
                 log.className = 'venta-log';
                 log.innerHTML = `
-                    <strong>Venta #${venta.id} [${venta.fecha}]</strong><br>
-                    <span style="color:#718096">${venta.articulos}</span><br>
-                    <span style="color:#28a745; font-weight:bold">Cobrado: $${venta.total.toFixed(2)}</span>
+                    <div>
+                        <strong>Venta #${venta.id} [${venta.fecha}]</strong><br>
+                        <span style="color:#718096">${venta.resumenArticulos}</span>
+                    </div>
+                    <span style="color:#28a745; font-weight:bold; min-width: 70px; text-align: right;">$${venta.total.toFixed(2)}</span>
                 `;
                 registroVentas.appendChild(log);
             });
         }
 
-        // Cargar información almacenada
+        // --- MÓDULO 5: EXPORTACIÓN DE DATOS (EXCEL Y PDF) ---
+
+        // Exportar a Excel con SheetJS
+        document.getElementById('btnExportarExcel').addEventListener('click', () => {
+            if (historialVentas.length === 0) {
+                alert("No hay ventas registradas para exportar.");
+                return;
+            }
+
+            // Crear arreglo estructurado para Excel
+            const filasExcel = [];
+            historialVentas.forEach(v => {
+                if (v.articulosDetalle && v.articulosDetalle.length > 0) {
+                    v.articulosDetalle.forEach(art => {
+                        filasExcel.push({
+                            "ID Venta": v.id,
+                            "Fecha": v.fecha,
+                            "Código Producto": art.codigo,
+                            "Producto": art.nombre,
+                            "Precio Unitario ($)": art.precio,
+                            "Cantidad": art.cantidad,
+                            "Subtotal ($)": art.precio * art.cantidad,
+                            "Total Venta ($)": v.total
+                        });
+                    });
+                } else {
+                    filasExcel.push({
+                        "ID Venta": v.id,
+                        "Fecha": v.fecha,
+                        "Código Producto": "-",
+                        "Producto": v.resumenArticulos,
+                        "Precio Unitario ($)": "-",
+                        "Cantidad": "-",
+                        "Subtotal ($)": "-",
+                        "Total Venta ($)": v.total
+                    });
+                }
+            });
+
+            const hojaTrabajo = XLSX.utils.json_to_sheet(filasExcel);
+            const libroTrabajo = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(libroTrabajo, hojaTrabajo, "Historial de Ventas");
+
+            XLSX.writeFile(libroTrabajo, `Reporte_Ventas_${new Date().toISOString().slice(0,10)}.xlsx`);
+        });
+
+        // Exportar a PDF con jsPDF y AutoTable
+        document.getElementById('btnExportarPDF').addEventListener('click', () => {
+            if (historialVentas.length === 0) {
+                alert("No hay ventas registradas para exportar.");
+                return;
+            }
+
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            // Título
+            doc.setFontSize(18);
+            doc.text("Reporte de Ventas - Sistema POS", 14, 20);
+            doc.setFontSize(10);
+            doc.text(`Fecha de emisión: ${new Date().toLocaleString()}`, 14, 28);
+
+            // Generar filas para la tabla del PDF
+            const columnas = ["ID Venta", "Fecha", "Detalle de Artículos", "Total ($)"];
+            const filas = historialVentas.map(v => [
+                v.id,
+                v.fecha,
+                v.resumenArticulos,
+                `$${v.total.toFixed(2)}`
+            ]);
+
+            // Total acumulado general
+            const granTotal = historialVentas.reduce((acc, v) => acc + v.total, 0);
+
+            doc.autoTable({
+                startY: 34,
+                head: [columnas],
+                body: filas,
+                theme: 'striped',
+                headStyles: { fillColor: [40, 167, 69] },
+            });
+
+            const ultimaY = doc.lastAutoTable.finalY + 10;
+            doc.setFontSize(12);
+            doc.text(`Ventas Totales Registradas: $${granTotal.toFixed(2)}`, 14, ultimaY);
+
+            doc.save(`Reporte_Ventas_${new Date().toISOString().slice(0,10)}.pdf`);
+        });
+
+        // Cargar información inicial
         renderizarCatalogo(catalogoProductos);
         renderizarVentas();
 
@@ -502,6 +682,7 @@
             historialVentas = [];
             carrito = [];
 
+            cancelarEdicion();
             renderizarCatalogo(catalogoProductos);
             renderizarCarrito();
             renderizarVentas();
