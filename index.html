@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema POS con Escáner de Barras</title>
+    <!-- Incluimos QuaggaJS para el escáner de códigos de barra -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
     <style>
         body {
@@ -52,7 +53,7 @@
             gap: 5px;
         }
 
-        input[type="text"], input[type="number"], input[type="file"] {
+        input[type="text"], input[type="number"] {
             padding: 10px;
             border: 2px solid #ddd;
             border-radius: 6px;
@@ -88,6 +89,7 @@
         .btn-venta { background-color: #28a745; width: 100%; padding: 12px; margin-top: 10px;}
         .btn-venta:hover { background-color: #218838; }
 
+        /* Contenedor de la cámara interactiva */
         #camara-escaner {
             width: 100%;
             height: 220px;
@@ -133,14 +135,6 @@
             transform: translateY(-1px);
         }
 
-        .img-miniatura {
-            width: 50px;
-            height: 50px;
-            object-fit: cover;
-            border-radius: 4px;
-            background: #eaeaea;
-        }
-
         .info-item { flex: 1; }
         .info-item h4 { margin: 0 0 2px 0; color: #2d3748; font-size: 0.95rem; }
         .info-item p { margin: 0; font-size: 0.85rem; color: #718096; }
@@ -149,16 +143,12 @@
         .acciones-carrito {
             display: flex;
             gap: 5px;
-            align-items: center;
         }
 
         .btn-sm {
-            padding: 4px 8px;
-            font-size: 0.8rem;
+            padding: 4px 10px;
+            font-size: 0.85rem;
         }
-
-        .btn-danger { background-color: #dc3545; }
-        .btn-danger:hover { background-color: #bd2130; }
 
         .total-contenedor {
             display: flex;
@@ -200,7 +190,7 @@
 
     <div class="contenedor-principal">
         
-        <!-- PANEL IZQUIERDO -->
+        <!-- PANEL IZQUIERDO: CAPTURA Y CATÁLOGO -->
         <div class="panel">
             <h2>Capturar Producto</h2>
             <form id="formularioProducto">
@@ -212,6 +202,7 @@
                     </div>
                 </div>
                 
+                <!-- Visor interactivo de la cámara -->
                 <div id="camara-escaner"></div>
 
                 <div class="campo">
@@ -224,17 +215,13 @@
                     <input type="number" id="inputPrecio" placeholder="0.00" step="0.01" min="0" required>
                 </div>
 
-                <div class="campo">
-                    <label>Imagen</label>
-                    <input type="file" id="inputImagen" accept="image/*">
-                </div>
-
                 <button type="submit">Guardar en Catálogo</button>
             </form>
+
             <button type="button" id="btnBorrarDatos" style="background:#dc3545;">
-            🗑 Borrar catálogo y ventas
+                🗑 Borrar catálogo y ventas
             </button>
-            
+
             <h2>Catálogo (Haz clic para agregar al carrito)</h2>
             <div class="campo">
                 <input type="text" id="inputFiltro" placeholder="🔍 Buscar por nombre o código...">
@@ -243,7 +230,7 @@
             <div id="listaProductos" class="lista-productos"></div>
         </div>
 
-        <!-- PANEL DERECHO -->
+        <!-- PANEL DERECHO: CAJA, TOTALES Y HISTORIAL -->
         <div class="panel">
             <h2>Carrito de Compras (Venta Actual)</h2>
             <p id="placeholderCarrito" class="placeholder">El carrito está vacío.</p>
@@ -263,28 +250,25 @@
     </div>
 
     <script>
+        // Datos persistentes
         let catalogoProductos = JSON.parse(localStorage.getItem("catalogoProductos")) || [];
         let carrito = [];
         let historialVentas = JSON.parse(localStorage.getItem("historialVentas")) || [];
         let escanerActivo = false;
 
         function guardarCatalogo() {
-            try {
-                localStorage.setItem("catalogoProductos", JSON.stringify(catalogoProductos));
-            } catch (e) {
-                alert("Error: El almacenamiento está lleno. Intenta usar imágenes más pequeñas.");
-            }
+            localStorage.setItem("catalogoProductos", JSON.stringify(catalogoProductos));
         }
 
         function guardarVentas() {
             localStorage.setItem("historialVentas", JSON.stringify(historialVentas));
         }
 
+        // Elementos DOM
         const formulario = document.getElementById('formularioProducto');
         const inputCodigo = document.getElementById('inputCodigo');
         const inputNombre = document.getElementById('inputNombre');
         const inputPrecio = document.getElementById('inputPrecio');
-        const inputImagen = document.getElementById('inputImagen');
         const inputFiltro = document.getElementById('inputFiltro');
         
         const listaProductos = document.getElementById('listaProductos');
@@ -296,7 +280,7 @@
         const placeholderVentas = document.getElementById('placeholderVentas');
         const txtTotal = document.getElementById('txtTotal');
 
-        // Escáner de código
+        // --- MÓDULO 1: CÁMARA & LECTOR DE CÓDIGO DE BARRAS ---
         document.getElementById('btnIniciarEscaner').addEventListener('click', () => {
             const visorCamara = document.getElementById('camara-escaner');
             
@@ -329,7 +313,7 @@
             });
         });
 
-        // Callback único de lectura
+        // Callback de lectura de cámara
         Quagga.onDetected((data) => {
             if (!escanerActivo) return;
 
@@ -346,43 +330,29 @@
             const prodExistente = catalogoProductos.find(p => p.codigo === codigoLeido);
             if (prodExistente) {
                 agregarAlCarrito(prodExistente);
-            } else {
-                alert(`Código ${codigoLeido} detectado. Rellena los datos para registrarlo.`);
             }
         });
 
-        // Formulario de Productos
+        // --- MÓDULO 2: CAPTURA DE PRODUCTOS ---
         formulario.addEventListener('submit', function(evento) {
             evento.preventDefault();
-            const archivo = inputImagen.files[0];
             
-            const procesarGuardado = (imagenUrl) => {
-                const nuevoProducto = {
-                    codigo: inputCodigo.value.trim(),
-                    nombre: inputNombre.value.trim(),
-                    precio: parseFloat(inputPrecio.value),
-                    imagenUrl: imagenUrl || 'https://via.placeholder.com/50'
-                };
-
-                const index = catalogoProductos.findIndex(p => p.codigo === nuevoProducto.codigo);
-                if(index !== -1){
-                    catalogoProductos[index] = nuevoProducto;
-                } else {
-                    catalogoProductos.push(nuevoProducto);
-                }
-
-                guardarCatalogo();
-                formulario.reset();
-                renderizarCatalogo(catalogoProductos);
+            const nuevoProducto = {
+                codigo: inputCodigo.value.trim(),
+                nombre: inputNombre.value.trim(),
+                precio: parseFloat(inputPrecio.value)
             };
 
-            if (archivo) {
-                const lector = new FileReader();
-                lector.onload = (e) => procesarGuardado(e.target.result);
-                lector.readAsDataURL(archivo);
+            const index = catalogoProductos.findIndex(p => p.codigo === nuevoProducto.codigo);
+            if(index !== -1){
+                catalogoProductos[index] = nuevoProducto;
             } else {
-                procesarGuardado(null);
+                catalogoProductos.push(nuevoProducto);
             }
+
+            guardarCatalogo();
+            formulario.reset();
+            renderizarCatalogo(catalogoProductos);
         });
 
         function renderizarCatalogo(lista) {
@@ -397,7 +367,6 @@
                 const tarjeta = document.createElement('div');
                 tarjeta.className = 'tarjeta-item clickable';
                 tarjeta.innerHTML = `
-                    <img class="img-miniatura" src="${producto.imagenUrl}" alt="prod">
                     <div class="info-item">
                         <h4>${producto.nombre}</h4>
                         <p>Cód: ${producto.codigo}</p>
@@ -409,6 +378,7 @@
             });
         }
 
+        // Filtrado dinámico
         inputFiltro.addEventListener('input', () => {
             const busqueda = inputFiltro.value.toLowerCase();
             const filtrados = catalogoProductos.filter(p => 
@@ -417,7 +387,7 @@
             renderizarCatalogo(filtrados);
         });
 
-        // Carrito
+        // --- MÓDULO 3: CARRITO & SUMA ---
         function agregarAlCarrito(producto) {
             const itemExistente = carrito.find(item => item.codigo === producto.codigo);
             if (itemExistente) {
@@ -470,7 +440,7 @@
             txtTotal.textContent = `$${totalAcumulado.toFixed(2)}`;
         }
 
-        // Ventas
+        // --- MÓDULO 4: REGISTRO DE VENTAS ---
         document.getElementById('btnCerrarVenta').addEventListener('click', () => {
             if (carrito.length === 0) {
                 alert("El carrito está vacío.");
@@ -516,12 +486,14 @@
             });
         }
 
-        // Carga Inicial
+        // Cargar información almacenada
         renderizarCatalogo(catalogoProductos);
         renderizarVentas();
 
         document.getElementById("btnBorrarDatos").addEventListener("click", () => {
-            if(!confirm("¿Deseas borrar todo el catálogo y el historial de ventas?")) return;
+            if(!confirm("¿Deseas borrar todo el catálogo y el historial de ventas?")){
+                return;
+            }
 
             localStorage.removeItem("catalogoProductos");
             localStorage.removeItem("historialVentas");
