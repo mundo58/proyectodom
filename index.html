@@ -6,7 +6,7 @@
     <title>Sistema POS con Escáner de Barras</title>
     <!-- QuaggaJS para lectura de código de barras -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
-    <!-- SheetJS (XLSX) para exportar a Excel -->
+    <!-- SheetJS (XLSX) para importar/exportar Excel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <!-- jsPDF y AutoTable para exportar a PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -59,7 +59,7 @@
             gap: 5px;
         }
 
-        input[type="text"], input[type="number"] {
+        input[type="text"], input[type="number"], input[type="file"] {
             padding: 10px;
             border: 2px solid #ddd;
             border-radius: 6px;
@@ -104,13 +104,15 @@
         .btn-pdf { background-color: #dc3545; }
         .btn-pdf:hover { background-color: #bb2d3b; }
 
+        .btn-danger { background-color: #dc3545; }
+        .btn-danger:hover { background-color: #bd2130; }
+
         .btn-sm {
             padding: 4px 8px;
             font-size: 0.8rem;
             border-radius: 4px;
         }
 
-        /* Contenedor de la cámara interactiva */
         #camara-escaner {
             width: 100%;
             height: 220px;
@@ -155,10 +157,7 @@
         .info-item p { margin: 0; font-size: 0.85rem; color: #718096; }
         .precio-tag { color: #28a745; font-weight: bold; font-size: 0.95rem; margin-right: 5px; }
 
-        .acciones-item {
-            display: flex;
-            gap: 5px;
-        }
+        .acciones-item { display: flex; gap: 5px; }
 
         .total-contenedor {
             display: flex;
@@ -195,9 +194,7 @@
             gap: 10px;
             margin-top: 10px;
         }
-        .export-buttons button {
-            flex: 1;
-        }
+        .export-buttons button { flex: 1; }
 
         .placeholder {
             color: #a0aec0;
@@ -211,13 +208,20 @@
             background-color: #fff3cd !important;
             border: 1px solid #ffeba2;
         }
+
+        .seccion-importar {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px dashed #ced4da;
+        }
     </style>
 </head>
 <body>
 
     <div class="contenedor-principal">
         
-        <!-- PANEL IZQUIERDO: CAPTURA, EDICIÓN Y CATÁLOGO -->
+        <!-- PANEL IZQUIERDO: CAPTURA, EDICIÓN, IMPORTACIÓN Y CATÁLOGO -->
         <div class="panel">
             <h2 id="tituloFormulario">Capturar Producto</h2>
             <form id="formularioProducto">
@@ -231,7 +235,6 @@
                     </div>
                 </div>
                 
-                <!-- Visor interactivo de la cámara -->
                 <div id="camara-escaner"></div>
 
                 <div class="campo">
@@ -250,8 +253,14 @@
                 </div>
             </form>
 
-            <button type="button" id="btnBorrarDatos" style="background:#dc3545;">
-                🗑 Borrar catálogo y ventas
+            <!-- SECCIÓN: IMPORTAR CATÁLOGO -->
+            <div class="seccion-importar">
+                <label style="font-weight: bold; font-size: 0.9rem; display: block; margin-bottom: 5px;">📥 Importar Catálogo (Excel / JSON)</label>
+                <input type="file" id="inputImportar" accept=".xlsx, .xls, .json" style="width: 100%; box-sizing: border-box; font-size: 0.85rem;">
+            </div>
+
+            <button type="button" id="btnBorrarCatalogo" class="btn-danger">
+                🗑 Vaciar Catálogo
             </button>
 
             <h2>Catálogo (Haz clic en el texto para agregar)</h2>
@@ -278,7 +287,11 @@
             <p id="placeholderVentas" class="placeholder">No se han registrado ventas hoy.</p>
             <div id="registroVentas" class="registro-ventas" style="display:none;"></div>
 
-            <!-- Botones para exportar las ventas -->
+            <button type="button" id="btnBorrarVentas" class="btn-danger">
+                🗑 Borrar Historial de Ventas
+            </button>
+
+            <!-- Botones de Exportación -->
             <div class="export-buttons">
                 <button type="button" class="btn-excel" id="btnExportarExcel">📊 Exportar a Excel</button>
                 <button type="button" class="btn-pdf" id="btnExportarPDF">📄 Exportar a PDF</button>
@@ -288,7 +301,7 @@
     </div>
 
     <script>
-        // Datos persistentes
+        // Datos
         let catalogoProductos = JSON.parse(localStorage.getItem("catalogoProductos")) || [];
         let carrito = [];
         let historialVentas = JSON.parse(localStorage.getItem("historialVentas")) || [];
@@ -310,6 +323,7 @@
         const inputNombre = document.getElementById('inputNombre');
         const inputPrecio = document.getElementById('inputPrecio');
         const inputFiltro = document.getElementById('inputFiltro');
+        const inputImportar = document.getElementById('inputImportar');
         const btnGuardar = document.getElementById('btnGuardar');
         const btnCancelarEdicion = document.getElementById('btnCancelarEdicion');
         
@@ -374,7 +388,7 @@
             }
         });
 
-        // --- MÓDULO 2: CAPTURA Y EDICIÓN DE PRODUCTOS ---
+        // --- MÓDULO 2: CAPTURA, EDICIÓN E IMPORTACIÓN DE CATÁLOGO ---
         formulario.addEventListener('submit', function(evento) {
             evento.preventDefault();
             
@@ -384,14 +398,12 @@
             const codigoAnterior = idProductoEditar.value;
 
             if (codigoAnterior) {
-                // Modo Edición
                 const index = catalogoProductos.findIndex(p => p.codigo === codigoAnterior);
                 if (index !== -1) {
                     catalogoProductos[index] = { codigo, nombre, precio };
                 }
                 cancelarEdicion();
             } else {
-                // Modo Creación
                 const indexExistente = catalogoProductos.findIndex(p => p.codigo === codigo);
                 if(indexExistente !== -1){
                     catalogoProductos[indexExistente] = { codigo, nombre, precio };
@@ -431,6 +443,69 @@
             formulario.classList.remove("modo-edicion");
         }
 
+        // Importación de Catálogo (Excel / JSON)
+        inputImportar.addEventListener('change', (e) => {
+            const archivo = e.target.files[0];
+            if (!archivo) return;
+
+            const nombreArchivo = archivo.name.toLowerCase();
+
+            if (nombreArchivo.endsWith('.json')) {
+                const lector = new FileReader();
+                lector.onload = (evento) => {
+                    try {
+                        const datos = JSON.parse(evento.target.result);
+                        procesarImportacion(datos);
+                    } catch (err) {
+                        alert("El archivo JSON no es válido.");
+                    }
+                };
+                lector.readAsText(archivo);
+            } else {
+                // Procesar Excel con SheetJS
+                const lector = new FileReader();
+                lector.onload = (evento) => {
+                    try {
+                        const data = new Uint8Array(evento.target.result);
+                        const libro = XLSX.read(data, { type: 'array' });
+                        const primeraHoja = libro.Sheets[libro.SheetNames[0]];
+                        const datosExcel = XLSX.utils.sheet_to_json(primeraHoja);
+                        
+                        procesarImportacion(datosExcel);
+                    } catch (err) {
+                        alert("Error al leer el archivo de Excel.");
+                    }
+                };
+                lector.readAsArrayBuffer(archivo);
+            }
+
+            inputImportar.value = "";
+        });
+
+        function procesarImportacion(listaNuevos) {
+            let agregados = 0;
+            listaNuevos.forEach(item => {
+                // Acepta claves tanto en español como sin acentos/mayúsculas
+                const codigo = String(item.codigo || item.Codigo || item["Código"] || item.code || "").trim();
+                const nombre = String(item.nombre || item.Nombre || item.product || "").trim();
+                const precio = parseFloat(item.precio || item.Precio || item.price || 0);
+
+                if (codigo && nombre && !isNaN(precio)) {
+                    const index = catalogoProductos.findIndex(p => p.codigo === codigo);
+                    if (index !== -1) {
+                        catalogoProductos[index] = { codigo, nombre, precio };
+                    } else {
+                        catalogoProductos.push({ codigo, nombre, precio });
+                    }
+                    agregados++;
+                }
+            });
+
+            guardarCatalogo();
+            renderizarCatalogo(catalogoProductos);
+            alert(`Importación completada: ${agregados} producto(s) procesados.`);
+        }
+
         function renderizarCatalogo(lista) {
             listaProductos.innerHTML = '';
             if (lista.length === 0) {
@@ -453,10 +528,8 @@
                     </div>
                 `;
 
-                // Clic en el texto -> Agregar al carrito
                 tarjeta.querySelector('.info-item').addEventListener('click', () => agregarAlCarrito(producto));
                 
-                // Clic en el botón Editar -> Cargar en formulario
                 tarjeta.querySelector('.btn-secundario').addEventListener('click', (e) => {
                     e.stopPropagation();
                     cargarProductoParaEditar(producto.codigo);
@@ -466,7 +539,6 @@
             });
         }
 
-        // Filtrado dinámico
         inputFiltro.addEventListener('input', () => {
             const busqueda = inputFiltro.value.toLowerCase();
             const filtrados = catalogoProductos.filter(p => 
@@ -578,15 +650,12 @@
         }
 
         // --- MÓDULO 5: EXPORTACIÓN DE DATOS (EXCEL Y PDF) ---
-
-        // Exportar a Excel con SheetJS
         document.getElementById('btnExportarExcel').addEventListener('click', () => {
             if (historialVentas.length === 0) {
                 alert("No hay ventas registradas para exportar.");
                 return;
             }
 
-            // Crear arreglo estructurado para Excel
             const filasExcel = [];
             historialVentas.forEach(v => {
                 if (v.articulosDetalle && v.articulosDetalle.length > 0) {
@@ -623,7 +692,6 @@
             XLSX.writeFile(libroTrabajo, `Reporte_Ventas_${new Date().toISOString().slice(0,10)}.xlsx`);
         });
 
-        // Exportar a PDF con jsPDF y AutoTable
         document.getElementById('btnExportarPDF').addEventListener('click', () => {
             if (historialVentas.length === 0) {
                 alert("No hay ventas registradas para exportar.");
@@ -633,13 +701,11 @@
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
 
-            // Título
             doc.setFontSize(18);
             doc.text("Reporte de Ventas - Sistema POS", 14, 20);
             doc.setFontSize(10);
             doc.text(`Fecha de emisión: ${new Date().toLocaleString()}`, 14, 28);
 
-            // Generar filas para la tabla del PDF
             const columnas = ["ID Venta", "Fecha", "Detalle de Artículos", "Total ($)"];
             const filas = historialVentas.map(v => [
                 v.id,
@@ -648,7 +714,6 @@
                 `$${v.total.toFixed(2)}`
             ]);
 
-            // Total acumulado general
             const granTotal = historialVentas.reduce((acc, v) => acc + v.total, 0);
 
             doc.autoTable({
@@ -666,27 +731,30 @@
             doc.save(`Reporte_Ventas_${new Date().toISOString().slice(0,10)}.pdf`);
         });
 
-        // Cargar información inicial
-        renderizarCatalogo(catalogoProductos);
-        renderizarVentas();
+        // --- MÓDULO 6: ACCIONES DE BORRADO SEPARADAS ---
 
-        document.getElementById("btnBorrarDatos").addEventListener("click", () => {
-            if(!confirm("¿Deseas borrar todo el catálogo y el historial de ventas?")){
-                return;
-            }
+        // Borrar SOLO el Catálogo
+        document.getElementById("btnBorrarCatalogo").addEventListener("click", () => {
+            if (!confirm("¿Deseas vaciar TODO el catálogo de productos?")) return;
 
             localStorage.removeItem("catalogoProductos");
-            localStorage.removeItem("historialVentas");
-
             catalogoProductos = [];
-            historialVentas = [];
-            carrito = [];
-
             cancelarEdicion();
             renderizarCatalogo(catalogoProductos);
-            renderizarCarrito();
+        });
+
+        // Borrar SOLO las Ventas
+        document.getElementById("btnBorrarVentas").addEventListener("click", () => {
+            if (!confirm("¿Deseas borrar TODO el historial de ventas?")) return;
+
+            localStorage.removeItem("historialVentas");
+            historialVentas = [];
             renderizarVentas();
         });
+
+        // Cargar datos iniciales
+        renderizarCatalogo(catalogoProductos);
+        renderizarVentas();
     </script>
 </body>
 </html>
