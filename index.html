@@ -2,69 +2,76 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Sistema de Recorrido GPS</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GPS Tracker Mobile</title>
     <style>
-        body { font-family: sans-serif; padding: 20px; text-align: center; }
-        .controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
-        button { padding: 15px; font-size: 16px; cursor: pointer; border: none; border-radius: 5px; color: white; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; text-align: center; background-color: #f4f4f9; }
+        .card { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        #cronometro { font-size: 2.5rem; font-weight: bold; color: #333; margin: 20px 0; }
+        .controls { display: grid; gap: 15px; }
+        button { padding: 20px; font-size: 18px; border: none; border-radius: 10px; color: white; font-weight: bold; touch-action: manipulation; }
         .btn-start { background-color: #28a745; }
         .btn-stop { background-color: #dc3545; }
         .btn-export { background-color: #007bff; }
-        #estado { font-weight: bold; margin: 10px 0; }
     </style>
 </head>
 <body>
 
-    <h1>Gestor de Recorrido</h1>
-    <div id="estado">Estado: Esperando inicio...</div>
-
-    <div class="controls">
-        <button class="btn-start" onclick="iniciar()">Iniciar Recorrido</button>
-        <button class="btn-stop" onclick="terminar()">Terminar Recorrido</button>
-        <button class="btn-export" onclick="exportarExcel()">Exportar Datos (CSV)</button>
+    <div class="card">
+        <h1>Tracker GPS</h1>
+        <div id="cronometro">00:00:00</div>
+        <div class="controls">
+            <button class="btn-start" onclick="iniciar()">Iniciar Recorrido</button>
+            <button class="btn-stop" onclick="terminar()">Terminar Recorrido</button>
+            <button class="btn-export" onclick="exportarExcel()">Exportar Datos</button>
+        </div>
     </div>
 
-    <canvas id="graficaSemanal"></canvas>
-
     <script>
-        let startPos = null;
+        let startTime, timerInterval, startPos;
         let historial = JSON.parse(localStorage.getItem('recorridos')) || [];
+
+        function actualizarCronometro() {
+            const ahora = new Date();
+            const diff = new Date(ahora - startTime);
+            document.getElementById('cronometro').innerText = diff.toISOString().substr(11, 8);
+        }
 
         function iniciar() {
             navigator.geolocation.getCurrentPosition(pos => {
-                startPos = { 
-                    lat: pos.coords.latitude, 
-                    lon: pos.coords.longitude,
-                    timestamp: new Date().toLocaleString()
-                };
-                document.getElementById('estado').innerText = "Estado: Recorrido en curso...";
+                startPos = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+                startTime = new Date();
+                timerInterval = setInterval(actualizarCronometro, 1000);
+                alert("Recorrido iniciado");
             });
         }
 
         function terminar() {
-            if (!startPos) return alert("Primero inicia el recorrido");
+            if (!startTime) return alert("El recorrido no ha iniciado");
+            clearInterval(timerInterval);
             navigator.geolocation.getCurrentPosition(pos => {
-                const endPos = { lat: pos.coords.latitude, lon: pos.coords.longitude };
                 const nuevoRegistro = { 
                     fecha: new Date().toLocaleDateString(),
                     hora: new Date().toLocaleTimeString(),
+                    duracion: document.getElementById('cronometro').innerText,
                     inicio: `${startPos.lat}, ${startPos.lon}`,
-                    fin: `${endPos.lat}, ${endPos.lon}`
+                    fin: `${pos.coords.latitude}, ${pos.coords.longitude}`
                 };
                 historial.push(nuevoRegistro);
                 localStorage.setItem('recorridos', JSON.stringify(historial));
-                document.getElementById('estado').innerText = "Estado: Recorrido guardado exitosamente";
+                document.getElementById('cronometro').innerText = "00:00:00";
+                startTime = null;
+                alert("Recorrido guardado");
             });
         }
 
         function exportarExcel() {
-            let csv = "Fecha,Hora,Coordenadas Inicio,Coordenadas Fin\n" + 
-                      historial.map(r => `${r.fecha},${r.hora},"${r.inicio}","${r.fin}"`).join("\n");
+            let csv = "Fecha,Hora,Duracion,Inicio,Fin\n" + 
+                      historial.map(r => `${r.fecha},${r.hora},${r.duracion},"${r.inicio}","${r.fin}"`).join("\n");
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url; a.download = 'coordenadas_recorrido.csv'; a.click();
+            a.href = url; a.download = 'mis_recorridos.csv'; a.click();
         }
     </script>
 </body>
