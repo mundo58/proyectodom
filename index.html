@@ -2,7 +2,6 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema de Recorrido GPS</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -23,7 +22,7 @@
     <div class="controls">
         <button class="btn-start" onclick="iniciar()">Iniciar Recorrido</button>
         <button class="btn-stop" onclick="terminar()">Terminar Recorrido</button>
-        <button class="btn-export" onclick="exportarExcel()">Exportar a Excel</button>
+        <button class="btn-export" onclick="exportarExcel()">Exportar Datos (CSV)</button>
     </div>
 
     <canvas id="graficaSemanal"></canvas>
@@ -32,17 +31,13 @@
         let startPos = null;
         let historial = JSON.parse(localStorage.getItem('recorridos')) || [];
 
-        function calcularDistancia(lat1, lon1, lat2, lon2) {
-            const R = 6371;
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
-            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        }
-
         function iniciar() {
             navigator.geolocation.getCurrentPosition(pos => {
-                startPos = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+                startPos = { 
+                    lat: pos.coords.latitude, 
+                    lon: pos.coords.longitude,
+                    timestamp: new Date().toLocaleString()
+                };
                 document.getElementById('estado').innerText = "Estado: Recorrido en curso...";
             });
         }
@@ -50,32 +45,27 @@
         function terminar() {
             if (!startPos) return alert("Primero inicia el recorrido");
             navigator.geolocation.getCurrentPosition(pos => {
-                const dist = calcularDistancia(startPos.lat, startPos.lon, pos.coords.latitude, pos.coords.longitude);
-                const nuevoRegistro = { fecha: new Date().toLocaleDateString(), km: dist.toFixed(2) };
+                const endPos = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+                const nuevoRegistro = { 
+                    fecha: new Date().toLocaleDateString(),
+                    hora: new Date().toLocaleTimeString(),
+                    inicio: `${startPos.lat}, ${startPos.lon}`,
+                    fin: `${endPos.lat}, ${endPos.lon}`
+                };
                 historial.push(nuevoRegistro);
                 localStorage.setItem('recorridos', JSON.stringify(historial));
-                document.getElementById('estado').innerText = "Estado: Recorrido guardado (" + dist.toFixed(2) + " km)";
-                renderizarGrafica();
+                document.getElementById('estado').innerText = "Estado: Recorrido guardado exitosamente";
             });
         }
 
         function exportarExcel() {
-            let csv = "Fecha,Distancia(km)\n" + historial.map(r => `${r.fecha},${r.km}`).join("\n");
+            let csv = "Fecha,Hora,Coordenadas Inicio,Coordenadas Fin\n" + 
+                      historial.map(r => `${r.fecha},${r.hora},"${r.inicio}","${r.fin}"`).join("\n");
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url; a.download = 'recorridos.csv'; a.click();
+            a.href = url; a.download = 'coordenadas_recorrido.csv'; a.click();
         }
-
-        function renderizarGrafica() {
-            const ctx = document.getElementById('graficaSemanal').getContext('2d');
-            new Chart(ctx, {
-                type: 'line',
-                data: { labels: historial.map(r => r.fecha), datasets: [{ label: 'KM recorridos', data: historial.map(r => r.km), borderColor: '#007bff' }] }
-            });
-        }
-        
-        renderizarGrafica();
     </script>
 </body>
 </html>
