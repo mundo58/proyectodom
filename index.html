@@ -12,7 +12,9 @@
         .btn-start { background-color: #28a745; }
         .btn-stop { background-color: #dc3545; }
         .btn-export { background-color: #007bff; }
+        .btn-clear { background-color: #6c757d; }
         #estado { font-weight: bold; margin: 10px 0; padding: 10px; border: 1px solid #ccc; }
+        #cronometro { font-size: 1.2em; color: #333; margin: 10px 0; }
         canvas { max-width: 100%; margin-top: 20px; }
     </style>
 </head>
@@ -20,11 +22,13 @@
 
     <h1>Gestor de Recorrido</h1>
     <div id="estado">Estado: Esperando inicio...</div>
+    <div id="cronometro">Tiempo: 00:00:00</div>
 
     <div class="controls">
         <button class="btn-start" onclick="iniciar()">Iniciar Recorrido</button>
         <button class="btn-stop" onclick="terminar()">Terminar Recorrido</button>
         <button class="btn-export" onclick="exportarExcel()">Exportar a Excel</button>
+        <button class="btn-clear" onclick="borrarHistorial()">Borrar Historial</button>
     </div>
 
     <canvas id="graficaSemanal"></canvas>
@@ -33,7 +37,17 @@
         let startPos = null;
         let startTime = null;
         let chart = null;
+        let timerInterval = null;
         let historial = JSON.parse(localStorage.getItem('recorridos')) || [];
+
+        function actualizarCronometro() {
+            const ahora = new Date();
+            const diff = new Date(ahora - startTime);
+            const h = String(diff.getUTCHours()).padStart(2, '0');
+            const m = String(diff.getUTCMinutes()).padStart(2, '0');
+            const s = String(diff.getUTCSeconds()).padStart(2, '0');
+            document.getElementById('cronometro').innerText = `Tiempo: ${h}:${m}:${s}`;
+        }
 
         function calcularDistancia(lat1, lon1, lat2, lon2) {
             const R = 6371;
@@ -48,31 +62,45 @@
                 startPos = { lat: pos.coords.latitude, lon: pos.coords.longitude };
                 startTime = new Date();
                 document.getElementById('estado').innerText = "Estado: Recorrido en curso...";
+                timerInterval = setInterval(actualizarCronometro, 1000);
             }, err => alert("Activa el GPS"));
         }
 
         function terminar() {
             if (!startPos) return alert("Primero inicia el recorrido");
             navigator.geolocation.getCurrentPosition(pos => {
+                clearInterval(timerInterval);
                 const dist = calcularDistancia(startPos.lat, startPos.lon, pos.coords.latitude, pos.coords.longitude);
-                const endTime = new Date();
-                const duracionMinutos = Math.round((endTime - startTime) / 60000);
+                const duracionSegundos = Math.round((new Date() - startTime) / 1000);
                 
                 const nuevoRegistro = { 
-                    fecha: new Date().toLocaleDateString(), 
+                    fecha: new Date().toLocaleString(), 
                     km: parseFloat(dist.toFixed(2)),
-                    tiempo: duracionMinutos 
+                    tiempo: Math.round(duracionSegundos / 60),
+                    latInicio: startPos.lat, lonInicio: startPos.lon,
+                    latFin: pos.coords.latitude, lonFin: pos.coords.longitude
                 };
                 
                 historial.push(nuevoRegistro);
                 localStorage.setItem('recorridos', JSON.stringify(historial));
-                document.getElementById('estado').innerText = `Estado: Guardado (${dist.toFixed(2)} km, ${duracionMinutos} min)`;
+                document.getElementById('estado').innerText = `Estado: Guardado (${dist.toFixed(2)} km)`;
+                document.getElementById('cronometro').innerText = "Tiempo: 00:00:00";
                 renderizarGrafica();
             });
         }
 
+        function borrarHistorial() {
+            if(confirm("¿Estás seguro de borrar todo el historial?")) {
+                historial = [];
+                localStorage.removeItem('recorridos');
+                renderizarGrafica();
+                alert("Historial eliminado");
+            }
+        }
+
         function exportarExcel() {
-            let csv = "Fecha,Distancia(km),Tiempo(min)\n" + historial.map(r => `${r.fecha},${r.km},${r.tiempo}`).join("\n");
+            let csv = "Fecha,Distancia(km),Tiempo(min),Lat Inicio,Lon Inicio,Lat Fin,Lon Fin\n" + 
+                      historial.map(r => `${r.fecha},${r.km},${r.tiempo},${r.latInicio},${r.lonInicio},${r.latFin},${r.lonFin}`).join("\n");
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -85,7 +113,7 @@
             chart = new Chart(ctx, {
                 type: 'line',
                 data: { 
-                    labels: historial.map(r => r.fecha), 
+                    labels: historial.map((_, i) => `Recorrido ${i+1}`), 
                     datasets: [
                         { label: 'KM recorridos', data: historial.map(r => r.km), borderColor: '#007bff', tension: 0.1 },
                         { label: 'Tiempo (min)', data: historial.map(r => r.tiempo), borderColor: '#28a745', tension: 0.1 }
